@@ -1,0 +1,38 @@
+[Unit]
+Description=Kino Agent - reaches this host's SSH daemon out through a Kino relay
+After=network-online.target sshd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/kino-agent/kino-agent.env
+ExecStart=/usr/local/bin/kino-agent
+Restart=always
+RestartSec=5s
+
+# The agent dials out and forwards bytes to 127.0.0.1:22. It never needs
+# privileges, a writable filesystem, or access to anyone's home directory -
+# so take all of it away. systemd reads EnvironmentFile as root before
+# dropping to the dynamic user, so the env file stays 0600 root:root.
+DynamicUser=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+# AF_UNIX is kept for name resolution (nscd/systemd-resolved talk over it).
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target
