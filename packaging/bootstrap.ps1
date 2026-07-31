@@ -13,13 +13,23 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
     [string] $RelayUrl,
+    # Kino Cloud: discover relays and refresh tokens via kino-control.
+    [string] $ControlUrl,
 
     [string] $AgentId,
+    # Bearer token, when the relay requires auth (its static RELAY_TOKEN, or a
+    # kino-control agent token).
+    [string] $Token,
+    # Kino Cloud machine credential (kca_...); requires -ControlUrl.
+    [string] $AgentKey,
     [string] $Version = 'latest',
     [string] $Repo = 'Samarthegde/kino-agent'
 )
+
+if (-not $RelayUrl -and -not $ControlUrl) {
+    throw 'Pass -RelayUrl or -ControlUrl (or both).'
+}
 
 $ErrorActionPreference = 'Stop'
 $asset = 'kino-agent-x86_64-pc-windows-msvc.exe'
@@ -55,8 +65,12 @@ try {
     Invoke-WebRequest "$raw/install.ps1" -OutFile (Join-Path $tmp 'install.ps1')
 
     # install.ps1 picks up the .exe sitting next to it.
-    $params = @{ RelayUrl = $RelayUrl }
-    if ($AgentId) { $params.AgentId = $AgentId }
+    $params = @{}
+    if ($RelayUrl)   { $params.RelayUrl   = $RelayUrl }
+    if ($ControlUrl) { $params.ControlUrl = $ControlUrl }
+    if ($AgentId)    { $params.AgentId    = $AgentId }
+    if ($Token)      { $params.Token      = $Token }
+    if ($AgentKey)   { $params.AgentKey   = $AgentKey }
     & (Join-Path $tmp 'install.ps1') @params
 }
 finally {

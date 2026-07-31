@@ -16,7 +16,10 @@ UNIT_DEST=/etc/systemd/system/kino-agent.service
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 RELAY_URL=""
+CONTROL_URL=""
 AGENT_ID=""
+TOKEN=""
+AGENT_KEY=""
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -24,20 +27,25 @@ usage() {
   cat <<'EOF'
 Install kino-agent as a systemd service on this host.
 
-  sudo ./install.sh --relay-url wss://relay.example.com [--agent-id <id>]
+  # Fixed relay:
+  sudo ./install.sh --relay-url wss://relay.example.com [--agent-id <id>] [--token <token>]
+  # Kino Cloud (relay discovery + automatic token refresh):
+  sudo ./install.sh --control-url https://control.example.com --agent-id <id> --agent-key <kca_...>
 
 Re-running is safe: it updates the binary and config in place and restarts the
-service. Omitting --agent-id keeps the existing one, or mints a new one on a
-first install.
+service, keeping any existing values you don't override.
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --relay-url) RELAY_URL="${2:-}"; shift 2 ;;
-    --agent-id)  AGENT_ID="${2:-}";  shift 2 ;;
-    -h|--help)   usage; exit 0 ;;
-    *)           die "unknown argument: $1" ;;
+    --relay-url)   RELAY_URL="${2:-}";   shift 2 ;;
+    --control-url) CONTROL_URL="${2:-}"; shift 2 ;;
+    --agent-id)    AGENT_ID="${2:-}";    shift 2 ;;
+    --token)       TOKEN="${2:-}";       shift 2 ;;
+    --agent-key)   AGENT_KEY="${2:-}";   shift 2 ;;
+    -h|--help)     usage; exit 0 ;;
+    *)             die "unknown argument: $1" ;;
   esac
 done
 
@@ -49,10 +57,14 @@ if [[ -f "$ENV_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$ENV_FILE"
   RELAY_URL="${RELAY_URL:-${KINO_RELAY_URL:-}}"
+  CONTROL_URL="${CONTROL_URL:-${KINO_CONTROL_URL:-}}"
   AGENT_ID="${AGENT_ID:-${KINO_AGENT_ID:-}}"
+  TOKEN="${TOKEN:-${KINO_TOKEN:-}}"
+  AGENT_KEY="${AGENT_KEY:-${KINO_AGENT_KEY:-}}"
 fi
 
-[[ -n "$RELAY_URL" ]] || die "--relay-url is required (e.g. wss://relay.example.com)"
+[[ -n "$RELAY_URL" || -n "$CONTROL_URL" ]] || die "--relay-url or --control-url is required"
+[[ -z "$AGENT_KEY" || -n "$CONTROL_URL" ]] || die "--agent-key requires --control-url"
 
 if [[ -z "$AGENT_ID" ]]; then
   if [[ -r /proc/sys/kernel/random/uuid ]]; then
@@ -91,12 +103,17 @@ install -d -m 0755 "$CONF_DIR"
 umask 077
 cat > "$ENV_FILE" <<EOF
 # Managed by kino-agent install.sh - edit and 'systemctl restart kino-agent'.
-KINO_RELAY_URL=$RELAY_URL
 KINO_AGENT_ID=$AGENT_ID
 # The agent logs at INFO by default; raise to debug/trace when diagnosing.
 # On Linux it logs to stdout, which systemd captures into the journal.
 RUST_LOG=info
 EOF
+# Secrets stay out of the unit's command line on purpose - this file is
+# root-only (0600).
+[[ -n "$RELAY_URL" ]] && echo "KINO_RELAY_URL=$RELAY_URL" >> "$ENV_FILE"
+[[ -n "$CONTROL_URL" ]] && echo "KINO_CONTROL_URL=$CONTROL_URL" >> "$ENV_FILE"
+[[ -n "$TOKEN" ]] && echo "KINO_TOKEN=$TOKEN" >> "$ENV_FILE"
+[[ -n "$AGENT_KEY" ]] && echo "KINO_AGENT_KEY=$AGENT_KEY" >> "$ENV_FILE"
 chmod 0600 "$ENV_FILE"
 
 echo "==> Installing unit to $UNIT_DEST"
@@ -116,8 +133,10 @@ fi
 
 cat <<EOF
 
-  Relay:    $RELAY_URL
+  Relay:    ${RELAY_URL:-"(discovered via kino-control)"}
+  Control:  ${CONTROL_URL:-"none"}
   Agent ID: $AGENT_ID
+  Token:    $([[ -n "$AGENT_KEY" ]] && echo "agent key set (auto-refreshing)" || { [[ -n "$TOKEN" ]] && echo "set (stored in $ENV_FILE)" || echo "none"; })
 
 Add this host in Kino SSH Manager with connection mode "Kino Agent",
 using the relay URL and agent ID above.

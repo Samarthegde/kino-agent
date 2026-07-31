@@ -1,8 +1,8 @@
 [package]
 name = "kino-agent"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
-license = "MIT"
+license = "GPL-3.0-only"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -16,6 +16,9 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+# Small blocking HTTP client for talking to kino-control (relay discovery and
+# presence). rustls again - same no-OpenSSL story as the WebSocket stack.
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 clap = { version = "4", features = ["derive", "env"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

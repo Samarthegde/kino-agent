@@ -13,17 +13,23 @@ set -eu
 REPO="${KINO_REPO:-Samarthegde/kino-agent}"
 VERSION="${KINO_VERSION:-latest}"
 RELAY_URL=""
+CONTROL_URL=""
 AGENT_ID=""
+TOKEN=""
+AGENT_KEY=""
 
 # ── args ─────────────────────────────────────────────────────────────────────
 while [ $# -gt 0 ]; do
   case "$1" in
-    --relay-url) RELAY_URL="${2:-}"; shift 2 ;;
-    --agent-id)  AGENT_ID="${2:-}";  shift 2 ;;
-    --version)   VERSION="${2:-}";   shift 2 ;;
-    --repo)      REPO="${2:-}";      shift 2 ;;
+    --relay-url)   RELAY_URL="${2:-}";   shift 2 ;;
+    --control-url) CONTROL_URL="${2:-}"; shift 2 ;;
+    --agent-id)    AGENT_ID="${2:-}";    shift 2 ;;
+    --token)       TOKEN="${2:-}";       shift 2 ;;
+    --agent-key)   AGENT_KEY="${2:-}";   shift 2 ;;
+    --version)     VERSION="${2:-}";     shift 2 ;;
+    --repo)        REPO="${2:-}";        shift 2 ;;
     -h|--help)
-      echo "Usage: bootstrap.sh --relay-url wss://host [--agent-id ID] [--version vX.Y.Z]"
+      echo "Usage: bootstrap.sh (--relay-url wss://host | --control-url https://control) [--agent-id ID] [--token TOKEN] [--agent-key KEY] [--version vX.Y.Z]"
       exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -31,9 +37,8 @@ done
 
 die() { echo "error: $*" >&2; exit 1; }
 
-[ -n "$RELAY_URL" ] || die "--relay-url is required (e.g. wss://kino-relay.example.com)"
-[ "$(id -u)" = "0" ] || die "must run as root - pipe through sudo:
-  curl -fsSL <url> | sudo sh -s -- --relay-url $RELAY_URL"
+[ -n "$RELAY_URL" ] || [ -n "$CONTROL_URL" ] || die "--relay-url or --control-url is required"
+[ "$(id -u)" = "0" ] || die "must run as root - pipe through sudo"
 
 # curl or wget, whichever exists.
 if command -v curl >/dev/null 2>&1; then
@@ -84,6 +89,10 @@ dl "${RAW}/install.sh" "$TMP/install.sh"           || die "failed to download in
 dl "${RAW}/kino-agent.service" "$TMP/kino-agent.service" || die "failed to download unit file"
 
 # install.sh picks up the binary sitting next to it.
-set -- --relay-url "$RELAY_URL"
+set --
+[ -n "$RELAY_URL" ] && set -- "$@" --relay-url "$RELAY_URL"
+[ -n "$CONTROL_URL" ] && set -- "$@" --control-url "$CONTROL_URL"
 [ -n "$AGENT_ID" ] && set -- "$@" --agent-id "$AGENT_ID"
+[ -n "$TOKEN" ] && set -- "$@" --token "$TOKEN"
+[ -n "$AGENT_KEY" ] && set -- "$@" --agent-key "$AGENT_KEY"
 sh "$TMP/install.sh" "$@"

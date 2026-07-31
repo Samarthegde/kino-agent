@@ -9,7 +9,22 @@ running locally.
 
 ---
 
-## Quick install (one-liner)
+## Kino Cloud install
+
+If the machine was added through kino-control, use the personalized command it
+generated - it registers the machine and passes `--control-url`/`--agent-key`
+to these installers automatically:
+
+```bash
+curl -fsSL https://kino.dpdns.org/install/<one-time-enroll-key> | sudo sh
+```
+
+Both installers also accept the cloud flags directly:
+`--control-url <url> --agent-key <kca_...>` (sh) /
+`-ControlUrl <url> -AgentKey <kca_...>` (PowerShell); `--relay-url` becomes
+optional then (kept as a fallback if kino-control is unreachable).
+
+## Quick install (one-liner, self-hosted relay)
 
 Downloads the prebuilt binary from the latest GitHub release and registers the
 service. No Rust toolchain required.
@@ -29,7 +44,9 @@ $s = irm https://raw.githubusercontent.com/Samarthegde/kino-agent/main/packaging
 ```
 
 Add `--agent-id <id>` / `-AgentId <id>` to pin a specific id; otherwise one is
-generated. Pin a release with `--version vX.Y.Z` / `-Version vX.Y.Z`.
+generated. If the relay requires auth, pass `--token <token>` / `-Token <token>`
+(its static `RELAY_TOKEN`, or an agent token issued by kino-control). Pin a
+release with `--version vX.Y.Z` / `-Version vX.Y.Z`.
 
 > The one-liners require published GitHub releases (the `build` workflow attaches
 > the binaries on every `v*` tag). Until the first release exists, use the
@@ -40,14 +57,15 @@ generated. Pin a release with `--version vX.Y.Z` / `-Version vX.Y.Z`.
 ## Manual - Linux (systemd)
 
 ```bash
-sudo ./install.sh --relay-url wss://kino-relay.example.com
+sudo ./install.sh --relay-url wss://kino-relay.example.com [--token <token>]
 ```
 
 Prints the agent ID it generated - paste that, and the relay URL, into Kino SSH
 Manager when adding the host (connection mode **Kino Agent**).
 
 Re-running is safe: it updates the binary and config in place, keeps the existing
-agent ID, and restarts the service.
+agent ID (and token), and restarts the service. The token is stored as
+`KINO_TOKEN` in the root-only env file, not on the unit's command line.
 
 | | |
 |---|---|
@@ -68,11 +86,17 @@ syscall filter): the agent only ever needs to dial out and connect to
 From an **elevated** PowerShell:
 
 ```powershell
-.\install.ps1 -RelayUrl wss://kino-relay.example.com
+.\install.ps1 -RelayUrl wss://kino-relay.example.com [-Token <token>]
 ```
 
 Registers a real Windows service that starts at boot and restarts on failure
-(the equivalent of systemd's `Restart=always`).
+(the equivalent of systemd's `Restart=always`). Re-running keeps the existing
+agent id and token unless you pass new ones.
+
+> On Windows the token ends up on the service command line and in `config.json`,
+> both readable by local users of that machine. It's a relay-access secret, not
+> an SSH credential - use a kino-control token scoped to this agent id so a
+> leak exposes only this host's own relay slot.
 
 | | |
 |---|---|
@@ -110,4 +134,5 @@ kino-agent --relay-url wss://kino-relay.example.com --agent-id my-agent-id
 ```
 
 Config can come from flags or the environment (`KINO_RELAY_URL`, `KINO_AGENT_ID`,
-`KINO_LOG_FILE`). Logging defaults to `info`; set `RUST_LOG=debug` for more.
+`KINO_TOKEN`, `KINO_LOG_FILE`). Logging defaults to `info`; set `RUST_LOG=debug`
+for more.

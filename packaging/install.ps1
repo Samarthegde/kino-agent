@@ -17,11 +17,19 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
     [string] $RelayUrl,
+    # Kino Cloud: discover relays and refresh tokens via kino-control.
+    [string] $ControlUrl,
 
     # Omit to keep the existing id, or mint a new one on a first install.
     [string] $AgentId,
+
+    # Bearer token, when the relay requires auth (its static RELAY_TOKEN, or a
+    # kino-control agent token). Omit to keep the existing one on a re-run.
+    [string] $Token,
+
+    # Kino Cloud machine credential (kca_...); requires -ControlUrl.
+    [string] $AgentKey,
 
     [string] $InstallDir = "$env:ProgramFiles\kino-agent"
 )
@@ -57,10 +65,20 @@ Install it with:
 }
 
 # ── Reuse existing config when re-running ────────────────────────────────────
-if (-not $AgentId -and (Test-Path $ConfigPath)) {
+if (Test-Path $ConfigPath) {
     $existing = Get-Content $ConfigPath -Raw | ConvertFrom-Json
-    $AgentId = $existing.AgentId
-    Write-Host "==> Reusing existing agent id: $AgentId"
+    if (-not $AgentId) {
+        $AgentId = $existing.AgentId
+        Write-Host "==> Reusing existing agent id: $AgentId"
+    }
+    foreach ($prop in 'Token', 'RelayUrl', 'ControlUrl', 'AgentKey') {
+        if (-not (Get-Variable $prop -ValueOnly) -and $existing.PSObject.Properties[$prop]) {
+            Set-Variable $prop $existing.$prop
+        }
+    }
+}
+if (-not $RelayUrl -and -not $ControlUrl) {
+    throw 'Pass -RelayUrl or -ControlUrl (or both).'
 }
 if (-not $AgentId) {
     $AgentId = [guid]::NewGuid().ToString()
@@ -92,13 +110,21 @@ New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Copy-Item -Path $source -Destination $ExePath -Force
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogPath) | Out-Null
-[pscustomobject]@{ RelayUrl = $RelayUrl; AgentId = $AgentId } |
-    ConvertTo-Json | Set-Content -Path $ConfigPath -Encoding UTF8
+[pscustomobject]@{
+    RelayUrl = $RelayUrl; ControlUrl = $ControlUrl; AgentId = $AgentId
+    Token = $Token; AgentKey = $AgentKey
+} | ConvertTo-Json | Set-Content -Path $ConfigPath -Encoding UTF8
 
 # The SCM launches the exe with this exact command line, so clap picks the flags up
 # the same way it does on a console. Quote every path - Program Files has a space.
-$binPath = '"{0}" --relay-url "{1}" --agent-id "{2}" --log-file "{3}"' -f `
-    $ExePath, $RelayUrl, $AgentId, $LogPath
+# Note: the command line (and config.json) are readable by local users - the
+# relay token is a relay-access secret, not an SSH credential; scope it to this
+# agent id (kino-control) so a leak exposes only this host's relay slot.
+$binPath = '"{0}" --agent-id "{1}" --log-file "{2}"' -f $ExePath, $AgentId, $LogPath
+if ($RelayUrl)   { $binPath += ' --relay-url "{0}"' -f $RelayUrl }
+if ($ControlUrl) { $binPath += ' --control-url "{0}"' -f $ControlUrl }
+if ($Token)      { $binPath += ' --token "{0}"' -f $Token }
+if ($AgentKey)   { $binPath += ' --agent-key "{0}"' -f $AgentKey }
 
 if ($svc) {
     Write-Host "==> Updating existing service"
@@ -131,6 +157,7 @@ if ($svc.Status -eq 'Running') {
 
   Relay:    $RelayUrl
   Agent ID: $AgentId
+  Token:    $(if ($Token) { 'set' } else { 'none' })
   Logs:     $LogPath
 
 Add this host in Kino SSH Manager with connection mode "Kino Agent",

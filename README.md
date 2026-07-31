@@ -1,7 +1,7 @@
 # kino-agent
 
 [![build](https://github.com/Samarthegde/kino-agent/actions/workflows/build.yml/badge.svg)](https://github.com/Samarthegde/kino-agent/actions/workflows/build.yml)
-[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![license: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
 A tiny, self-contained agent that exposes a machine's local SSH daemon to
 [Kino SSH Manager](https://github.com/Samarthegde/kino-ssh-manager) through a
@@ -35,7 +35,20 @@ reconnects automatically (every 5s) if the relay or network drops.
 
 ## Install
 
-### One-liner (recommended)
+### Kino Cloud (easiest)
+
+Add a machine in kino-control (web UI or Kino SSH Manager) and run the
+personalized command it gives you:
+
+```bash
+curl -fsSL https://kino.dpdns.org/install/<one-time-enroll-key> | sudo sh
+```
+
+That registers the machine, installs the agent as a service, and configures it
+with `--control-url` + `--agent-key`: the agent discovers the fastest relay
+and refreshes its own short-lived tokens - nothing else to configure, ever.
+
+### One-liner (self-hosted relay)
 
 Downloads the prebuilt binary from the latest GitHub release and registers a
 service that starts at boot and restarts on failure. No Rust toolchain needed.
@@ -44,19 +57,20 @@ service that starts at boot and restarts on failure. No Rust toolchain needed.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Samarthegde/kino-agent/main/packaging/bootstrap.sh \
-  | sudo sh -s -- --relay-url wss://kino-relay.samarthkombemane.com
+  | sudo sh -s -- --relay-url wss://relay.example.com
 ```
 
 **Windows (elevated PowerShell):**
 
 ```powershell
 $s = irm https://raw.githubusercontent.com/Samarthegde/kino-agent/main/packaging/bootstrap.ps1
-& ([scriptblock]::Create($s)) -RelayUrl wss://kino-relay.samarthkombemane.com
+& ([scriptblock]::Create($s)) -RelayUrl wss://relay.example.com
 ```
 
 The installer prints the **agent ID** it generated. Add a host in Kino SSH
 Manager with connection mode **Kino Agent**, and paste in the relay URL and that
-agent ID.
+agent ID. If the relay requires auth, append `--token <token>` (Linux) /
+`-Token <token>` (Windows) - see [Configuration](#configuration).
 
 > Windows does not run an SSH server by default - install one, or every session
 > will fail. See [packaging/README.md](packaging/README.md#windows-needs-an-ssh-server).
@@ -70,7 +84,11 @@ Handy for trying it out or debugging. The same binary runs in the foreground on
 every platform:
 
 ```bash
-kino-agent --relay-url wss://kino-relay.samarthkombemane.com --agent-id my-agent
+# Fixed relay:
+kino-agent --relay-url wss://relay.example.com --agent-id my-agent
+
+# Kino Cloud (relay discovered, tokens refreshed automatically):
+kino-agent --control-url https://kino.dpdns.org --agent-key kca_...
 ```
 
 ---
@@ -81,13 +99,18 @@ Every option can be set by flag or environment variable (the flag wins):
 
 | Flag | Env var | Required | Description |
 |------|---------|----------|-------------|
-| `--relay-url` | `KINO_RELAY_URL` | yes | Relay base URL, e.g. `wss://kino-relay.samarthkombemane.com`. Use `ws://` only for local testing. |
-| `--agent-id`  | `KINO_AGENT_ID`  | yes | Stable unique id for this host. Any string; a UUID is a good default. |
+| `--relay-url` | `KINO_RELAY_URL` | yes* | Fixed relay base URL, e.g. `wss://relay.example.com`. Use `ws://` only for local testing. *Optional when `--control-url` is set (then it's the fallback). |
+| `--control-url` | `KINO_CONTROL_URL` | no | [kino-control](https://github.com/Samarthegde/kino-control) base URL. The agent fetches the enrolled relays (policy-ordered), latency-races the top few, parks on the fastest, and reports its location so managers can find it. Re-picks automatically if the relay dies. Requires `--token` or `--agent-key`. |
+| `--agent-key` | `KINO_AGENT_KEY` | no | Kino Cloud machine credential (`kca_...`) from the install flow. The agent trades it for short-lived relay tokens at startup and auto-refreshes them (at ~3/4 of each token's life). Makes `--agent-id` optional (kino-control assigns it) and `--token` unnecessary. Requires `--control-url`. |
+| `--agent-id`  | `KINO_AGENT_ID`  | yes* | Stable unique id for this host. Any string; a UUID is a good default. *Optional with `--agent-key`, where kino-control assigns and states it. |
+| `--token`     | `KINO_TOKEN`     | no  | Bearer token, when the relay requires auth: its static `RELAY_TOKEN`, or an agent token issued by [kino-control](https://github.com/Samarthegde/kino-control). |
 | `--log-file`  | `KINO_LOG_FILE`  | no  | Append logs to this file instead of stdout. Set automatically for the Windows service (which has no console). |
 | -             | `RUST_LOG`       | no  | Log verbosity (`error`/`warn`/`info`/`debug`/`trace`). Defaults to `info`. |
 
 The `agent_id` is how the relay and manager address this specific machine, so
-keep it stable - changing it means updating the host entry in the manager.
+keep it stable - changing it means updating the host entry in the manager. In
+Kino Cloud mode it is assigned once at install and refreshed from kino-control,
+so there is nothing to keep track of.
 
 ---
 
@@ -132,6 +155,7 @@ packaging/
   kino-agent.service  Hardened systemd unit
   README.md       Full installation & operations guide
 .github/workflows/build.yml   CI matrix + release publishing
+CHANGELOG.md      Release history
 ```
 
 ---
@@ -148,11 +172,12 @@ packaging/
 - **The agent needs no privileges.** The systemd unit runs it as a dynamic,
   unprivileged user with a read-only filesystem and a syscall filter - it only
   dials out and connects to `127.0.0.1:22`.
-- **The public relay currently has no authentication of its own.** Anyone who can
-  reach the relay and knows an agent's id can open an SSH transport to that host -
-  where your `sshd`'s own authentication is the gate. Treat the `agent_id` as a
-  low-value secret and keep `sshd` locked down. Adding a shared-secret handshake to
-  the relay is on the roadmap; see the relay repo.
+- **Use a relay with auth enabled for anything public.** The relay accepts a
+  bearer token (`--token`): either its static `RELAY_TOKEN` or a scoped agent
+  token issued by [kino-control](https://github.com/Samarthegde/kino-control).
+  On a relay running *without* auth, anyone who can reach it and knows an
+  agent's id can open an SSH transport to that host - where your `sshd`'s own
+  authentication is the gate. Keep `sshd` locked down regardless.
 
 Found a vulnerability? Please report it privately (see
 [CONTRIBUTING.md](CONTRIBUTING.md)) rather than opening a public issue.
@@ -165,4 +190,4 @@ Contributions are welcome - see **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 ## License
 
-[MIT](LICENSE) © 2026 Samarth Kombemane
+[GNU GPL-3.0](LICENSE) © 2026 Samarth Kombemane
