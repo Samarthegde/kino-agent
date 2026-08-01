@@ -95,4 +95,7 @@ set --
 [ -n "$AGENT_ID" ] && set -- "$@" --agent-id "$AGENT_ID"
 [ -n "$TOKEN" ] && set -- "$@" --token "$TOKEN"
 [ -n "$AGENT_KEY" ] && set -- "$@" --agent-key "$AGENT_KEY"
-sh "$TMP/install.sh" "$@"
+# install.sh is a bash script (pipefail, [[ ]], BASH_SOURCE); invoking it with
+# `sh` breaks on any distro where /bin/sh is dash - i.e. Debian and Ubuntu.
+command -v bash >/dev/null 2>&1 || die "bash is required to run the installer"
+bash "$TMP/install.sh" "$@"

@@ -16,7 +16,7 @@ generated - it registers the machine and passes `--control-url`/`--agent-key`
 to these installers automatically:
 
 ```bash
-curl -fsSL https://kino.dpdns.org/install/<one-time-enroll-key> | sudo sh
+curl -fsSL https://kino.samarthkombemane.com/install/<one-time-enroll-key> | sudo sh
 ```
 
 Both installers also accept the cloud flags directly:

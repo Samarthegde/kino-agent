@@ -4,6 +4,16 @@ All notable changes to kino-agent are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **The one-line installer failed on Debian and Ubuntu.** `bootstrap.sh` invoked
+  `install.sh` with `sh`, but the installer is a bash script - so on any distro
+  where `/bin/sh` is dash it died immediately with
+  `set: Illegal option -o pipefail`, after the machine had already been
+  registered. It now runs the installer with `bash`. No new release needed:
+  the installer is fetched from `main` at install time.
+
 ## [0.1.1] - 2026-07-31
 
 ### Added
@@ -34,7 +44,7 @@ All notable changes to kino-agent are documented here. The format is based on
 ### Changed
 - **License: MIT - GPL-3.0.**
 - README documents the Kino Cloud install (`curl -fsSL
-  https://kino.dpdns.org/install/<key> | sudo sh`) alongside the self-hosted
+  https://kino.samarthkombemane.com/install/<key> | sudo sh`) alongside the self-hosted
   relay flow.
 
 ## [0.1.0] - 2026-07-13

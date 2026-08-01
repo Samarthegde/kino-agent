@@ -41,7 +41,7 @@ Add a machine in kino-control (web UI or Kino SSH Manager) and run the
 personalized command it gives you:
 
 ```bash
-curl -fsSL https://kino.dpdns.org/install/<one-time-enroll-key> | sudo sh
+curl -fsSL https://kino.samarthkombemane.com/install/<one-time-enroll-key> | sudo sh
 ```
 
 That registers the machine, installs the agent as a service, and configures it
@@ -88,7 +88,7 @@ every platform:
 kino-agent --relay-url wss://relay.example.com --agent-id my-agent
 
 # Kino Cloud (relay discovered, tokens refreshed automatically):
-kino-agent --control-url https://kino.dpdns.org --agent-key kca_...
+kino-agent --control-url https://kino.samarthkombemane.com --agent-key kca_...
 ```
 
 ---
